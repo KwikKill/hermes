@@ -1,0 +1,4 @@
+hermes.somi.{$WEBSITE_HOST} {
+	import restricted
+	reverse_proxy hermes:3000
+}

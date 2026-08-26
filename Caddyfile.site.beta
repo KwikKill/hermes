@@ -1,0 +1,3 @@
+hermes.somi.{$WEBSITE_HOST} {
+	reverse_proxy hermes:3000
+}

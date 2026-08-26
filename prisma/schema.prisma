@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FeedCategory {
+  YOUTUBE
+  ANIME
+  GAMES
+}
+
+model TrackedChannel {
+  id        String   @id @default(cuid())
+  channelId String   @unique
+  title     String
+  thumbnail String?
+  addedAt   DateTime @default(now())
+}
+
+model TrackedAnime {
+  id         String   @id @default(cuid())
+  anilistId  Int      @unique
+  title      String
+  coverImage String?
+  addedAt    DateTime @default(now())
+}
+
+model TrackedGame {
+  id             String    @id @default(cuid())
+  rawgId         Int       @unique
+  name           String
+  image          String?
+  lastReleasedAt DateTime?
+  addedAt        DateTime  @default(now())
+}
+
+// Shared by all three RSS feeds - one row per YouTube video / aired anime
+// episode / game release event. Populated by POST /api/poll, read by
+// GET /rss/{category}.xml.
+model FeedItem {
+  id          String       @id @default(cuid())
+  category    FeedCategory
+  guid        String       @unique
+  title       String
+  link        String
+  description String?
+  publishedAt DateTime
+  createdAt   DateTime     @default(now())
+
+  @@index([category, publishedAt])
+}

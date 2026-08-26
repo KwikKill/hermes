@@ -1,0 +1,52 @@
+services:
+  hermes:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    container_name: hermes
+    image: site/hermes
+    env_file:
+      - ./hermes/.env
+    depends_on:
+      db-hermes:
+        condition: service_healthy
+    expose:
+      - "3000"
+    networks:
+      - hermes
+    restart: unless-stopped
+
+  db-hermes:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: hermes
+      POSTGRES_USER: hermes
+      POSTGRES_PASSWORD: hermes
+    expose:
+      - "5432"
+    volumes:
+      - hermes-db-data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hermes
+
+  hermes-cron:
+    build:
+      context: ./hermes/cron
+      dockerfile: Dockerfile
+    container_name: hermes-cron
+    depends_on:
+      - hermes
+    env_file:
+      - ./hermes/.env
+    networks:
+      - hermes
+    restart: unless-stopped
+
+volumes:
+  hermes-db-data:
