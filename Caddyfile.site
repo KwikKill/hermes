@@ -1,4 +1,13 @@
 hermes.somi.{$WEBSITE_HOST} {
-	import restricted
-	reverse_proxy hermes:3000
+	# RSS output is public (a feed reader/widget rarely supports basic auth,
+	# and titles aren't sensitive) - only the add/remove admin UI is
+	# protected.
+	handle /rss/* {
+		reverse_proxy hermes:3000
+	}
+
+	handle {
+		import restricted
+		reverse_proxy hermes:3000
+	}
 }
