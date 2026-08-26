@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: hermes
     image: site/hermes
+    environment:
+      - DATABASE_URL=postgresql://hermes:hermes@db-hermes:5432/hermes
     env_file:
       - ./hermes/.env
     depends_on:

@@ -189,32 +189,38 @@ export default function TrackerSection({
       {searching && <p className="mb-2 text-sm text-neutral-500">Recherche...</p>}
 
       {trimmedQuery && results.length > 0 && (
-        <ul className="mb-4 max-h-64 space-y-1 overflow-y-auto">
+        <ul className="mb-4 max-h-80 space-y-1 overflow-y-auto">
           {results.map((r) => (
             <li
               key={String(r.externalId)}
-              className="flex items-center justify-between gap-2 rounded bg-neutral-900 px-2 py-1 text-sm"
+              className="rounded bg-neutral-900 px-2 py-2 text-sm"
             >
-              <span className="flex items-center gap-2 truncate">
+              <div className="flex items-start gap-2">
                 {r.image && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={r.image} alt="" className="h-6 w-6 rounded object-cover" />
+                  <img
+                    src={r.image}
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded object-cover"
+                  />
                 )}
-                <span className="truncate">{r.label}</span>
-              </span>
-              {trackedExternalIds.has(String(r.externalId)) ? (
-                <span className="shrink-0 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-500">
-                  Déjà suivi
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => addItem(r)}
-                  className="shrink-0 rounded bg-blue-600 px-2 py-1 text-xs hover:bg-blue-500"
-                >
-                  Ajouter
-                </button>
-              )}
+                <span className="min-w-0 break-words">{r.label}</span>
+              </div>
+              <div className="mt-1.5 flex justify-end">
+                {trackedExternalIds.has(String(r.externalId)) ? (
+                  <span className="rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-500">
+                    Déjà suivi
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => addItem(r)}
+                    className="rounded bg-blue-600 px-2 py-1 text-xs hover:bg-blue-500"
+                  >
+                    Ajouter
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -223,26 +229,29 @@ export default function TrackerSection({
       <h3 className="mb-2 text-sm font-medium text-neutral-400">
         Suivis ({tracked.length})
       </h3>
-      <ul className="space-y-1">
+      <ul className="max-h-80 space-y-1 overflow-y-auto">
         {tracked.map((t) => (
-          <li
-            key={t.id}
-            className="flex items-center justify-between gap-2 rounded bg-neutral-900 px-2 py-1 text-sm"
-          >
-            <span className="flex items-center gap-2 truncate">
+          <li key={t.id} className="rounded bg-neutral-900 px-2 py-2 text-sm">
+            <div className="flex items-start gap-2">
               {t.image && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={t.image} alt="" className="h-6 w-6 rounded object-cover" />
+                <img
+                  src={t.image}
+                  alt=""
+                  className="h-6 w-6 shrink-0 rounded object-cover"
+                />
               )}
-              <span className="truncate">{t.label}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => removeItem(t.id)}
-              className="shrink-0 rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-red-600"
-            >
-              Retirer
-            </button>
+              <span className="min-w-0 break-words">{t.label}</span>
+            </div>
+            <div className="mt-1.5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => removeItem(t.id)}
+                className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-red-600"
+              >
+                Retirer
+              </button>
+            </div>
           </li>
         ))}
         {tracked.length === 0 && (
