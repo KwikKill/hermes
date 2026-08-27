@@ -8,7 +8,8 @@ export default function Home() {
         <p className="text-sm text-neutral-400">
           Recherche et ajoute ce que tu veux suivre. Les flux RSS sont générés
           automatiquement : <code>/rss/youtube.xml</code>,{" "}
-          <code>/rss/anime.xml</code>, <code>/rss/games.xml</code>.
+          <code>/rss/anime.xml</code>, <code>/rss/games.xml</code>, ou{" "}
+          <code>/rss/all.xml</code> pour tout regrouper.
         </p>
       </header>
 
