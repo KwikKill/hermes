@@ -63,24 +63,43 @@ interface StreamingEpisode {
   url: string;
 }
 
+interface AiringScheduleNode {
+  episode: number;
+  airingAt: number; // unix seconds
+}
+
 interface AniListEpisodesMedia {
   id: number;
   title: { romaji: string; english: string | null };
+  siteUrl: string;
+  airingSchedule: { nodes: AiringScheduleNode[] };
   streamingEpisodes: StreamingEpisode[];
 }
 
-// AniList's `streamingEpisodes` field lists episodes it knows are
-// available on legal streaming platforms - this is the closest thing to
-// "episode released" AniList exposes without needing a key. It has no
-// per-episode air date, so publishedAt is "when we first saw it" rather
-// than the real air date - fine for feed ordering/dedup purposes (the
-// caller only creates a FeedItem for guids never seen before).
+// Extracts an episode number from AniList's streamingEpisodes titles, e.g.
+// "Episode 12 - Some Title" -> 12. Best-effort: streaming providers don't
+// always follow this exact format.
+function parseEpisodeNumber(episodeTitle: string): number | null {
+  const match = /episode\s+(\d+)/i.exec(episodeTitle);
+  return match ? Number(match[1]) : null;
+}
+
+// `airingSchedule` is what actually carries a real per-episode air date
+// (`airingAt`, unix seconds) - `streamingEpisodes` has no date field at all,
+// only a title/thumbnail/url once a provider has it up. We use the former
+// for the date and try to match the latter for a clickable link, falling
+// back to the show's AniList page when no streaming link is found for that
+// episode number.
 export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]> {
   const gql = `
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
         id
         title { romaji english }
+        siteUrl
+        airingSchedule(notYetAired: false, sort: TIME_DESC, perPage: 25) {
+          nodes { episode airingAt }
+        }
         streamingEpisodes { title thumbnail url }
       }
     }
@@ -91,13 +110,20 @@ export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]
   const media = data.Media;
   const showTitle = media.title.english ?? media.title.romaji;
 
-  return (media.streamingEpisodes ?? [])
-    .filter((ep) => ep.url)
-    .map((ep) => ({
-      guid: `anime:${anilistId}:${ep.url}`,
-      title: `${showTitle} - ${ep.title}`,
-      link: ep.url,
+  const streamingByEpisode = new Map<number, StreamingEpisode>();
+  for (const ep of media.streamingEpisodes ?? []) {
+    const num = parseEpisodeNumber(ep.title);
+    if (num !== null && ep.url) streamingByEpisode.set(num, ep);
+  }
+
+  return (media.airingSchedule?.nodes ?? []).map((node) => {
+    const streaming = streamingByEpisode.get(node.episode);
+    return {
+      guid: `anime:${anilistId}:${node.episode}`,
+      title: `${showTitle} - Episode ${node.episode}`,
+      link: streaming?.url ?? media.siteUrl,
       description: null,
-      publishedAt: new Date(),
-    }));
+      publishedAt: new Date(node.airingAt * 1000),
+    };
+  });
 }
