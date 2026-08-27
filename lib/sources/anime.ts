@@ -144,7 +144,7 @@ export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]
     const streaming = streamingByEpisode.get(node.episode);
     return {
       guid: `anime:${anilistId}:${node.episode}`,
-      title: `${showTitle} - Episode ${node.episode}`,
+      title: `[Anime] ${showTitle} - Episode ${node.episode}`,
       link: streaming?.url ?? media.siteUrl,
       description: null,
       publishedAt: new Date(node.airingAt * 1000),

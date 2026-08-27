@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   const channels = await prisma.trackedChannel.findMany();
   for (const channel of channels) {
     try {
-      const entries = await fetchChannelVideos(channel.channelId);
+      const entries = await fetchChannelVideos(channel.channelId, channel.title);
       created += await insertNewItems("YOUTUBE", entries, {
         trackedChannelId: channel.id,
       });

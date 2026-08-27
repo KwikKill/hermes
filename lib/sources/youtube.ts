@@ -105,7 +105,8 @@ async function fetchVideoDurations(videoIds: string[]): Promise<Map<string, numb
 // Polls a channel's public RSS feed (no quota), then filters out Shorts by
 // checking each new video's duration via the Data API (needs YOUTUBE_API_KEY).
 export async function fetchChannelVideos(
-  channelId: string
+  channelId: string,
+  channelTitle: string
 ): Promise<FeedEntry[]> {
   const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`;
   const res = await fetch(url);
@@ -135,7 +136,7 @@ export async function fetchChannelVideos(
     })
     .map((entry) => ({
       guid: `youtube:${entry["yt:videoId"]}`,
-      title: String(entry.title),
+      title: `[Youtube] ${channelTitle} : ${entry.title}`,
       link: `https://www.youtube.com/watch?v=${entry["yt:videoId"]}`,
       description: entry["media:group"]?.["media:description"] ?? null,
       publishedAt: new Date(entry.published as string),

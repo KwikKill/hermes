@@ -146,7 +146,7 @@ export async function fetchGameRelease(
   return {
     entry: {
       guid: `games:${rawgId}:${releasedAt.toISOString()}`,
-      title: `${game.name} - sorti le ${releasedAt.toLocaleDateString("fr-FR")}`,
+      title: `[Game] ${game.name} - sorti le ${releasedAt.toLocaleDateString("fr-FR")}`,
       link: `https://rawg.io/games/${rawgId}`,
       description: null,
       publishedAt: releasedAt,
