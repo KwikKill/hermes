@@ -1,13 +1,13 @@
 hermes.somi.{$WEBSITE_HOST} {
-	# RSS output is public (a feed reader/widget rarely supports basic auth,
-	# and titles aren't sensitive) - only the add/remove admin UI is
-	# protected.
+	# RSS output is public (a feed reader/widget can't do an interactive SSO
+	# login flow, and titles aren't sensitive) - only the add/remove admin
+	# UI is behind Authentik.
 	handle /rss/* {
 		reverse_proxy hermes:3000
 	}
 
 	handle {
-		import restricted
+		import forward_auth
 		reverse_proxy hermes:3000
 	}
 }
