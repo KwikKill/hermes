@@ -68,11 +68,16 @@ interface AiringScheduleNode {
   airingAt: number; // unix seconds
 }
 
+interface AiringScheduleConnection {
+  pageInfo: { lastPage: number };
+  nodes: AiringScheduleNode[];
+}
+
 interface AniListEpisodesMedia {
   id: number;
   title: { romaji: string; english: string | null };
   siteUrl: string;
-  airingSchedule: { nodes: AiringScheduleNode[] };
+  airingSchedule: AiringScheduleConnection;
   streamingEpisodes: StreamingEpisode[];
 }
 
@@ -90,14 +95,24 @@ function parseEpisodeNumber(episodeTitle: string): number | null {
 // for the date and try to match the latter for a clickable link, falling
 // back to the show's AniList page when no streaming link is found for that
 // episode number.
-export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]> {
+// `airingSchedule` has no `sort` argument (only `notYetAired`/`page`/
+// `perPage`) and returns nodes in ascending episode order, so page 1 is the
+// *earliest* aired episodes - wrong end for a long-running show. We fetch
+// page 1 first purely to read `pageInfo.lastPage`, then (when there's more
+// than one page) re-fetch that last page to get the most recently aired
+// episodes instead.
+async function fetchAiringSchedulePage(
+  anilistId: number,
+  page: number
+): Promise<{ media: AniListEpisodesMedia; lastPage: number }> {
   const gql = `
-    query ($id: Int) {
+    query ($id: Int, $page: Int) {
       Media(id: $id, type: ANIME) {
         id
         title { romaji english }
         siteUrl
-        airingSchedule(notYetAired: false, sort: TIME_DESC, perPage: 25) {
+        airingSchedule(notYetAired: false, page: $page, perPage: 25) {
+          pageInfo { lastPage }
           nodes { episode airingAt }
         }
         streamingEpisodes { title thumbnail url }
@@ -106,8 +121,17 @@ export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]
   `;
   const data = await anilistQuery<{ Media: AniListEpisodesMedia }>(gql, {
     id: anilistId,
+    page,
   });
-  const media = data.Media;
+  return { media: data.Media, lastPage: data.Media.airingSchedule.pageInfo.lastPage };
+}
+
+export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]> {
+  const first = await fetchAiringSchedulePage(anilistId, 1);
+  const { media } =
+    first.lastPage > 1
+      ? await fetchAiringSchedulePage(anilistId, first.lastPage)
+      : first;
   const showTitle = media.title.english ?? media.title.romaji;
 
   const streamingByEpisode = new Map<number, StreamingEpisode>();

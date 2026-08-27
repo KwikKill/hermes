@@ -14,33 +14,37 @@ enum FeedCategory {
 }
 
 model TrackedChannel {
-  id        String   @id @default(cuid())
-  channelId String   @unique
+  id        String     @id @default(cuid())
+  channelId String     @unique
   title     String
   thumbnail String?
-  addedAt   DateTime @default(now())
+  addedAt   DateTime   @default(now())
+  feedItems FeedItem[]
 }
 
 model TrackedAnime {
-  id         String   @id @default(cuid())
-  anilistId  Int      @unique
+  id         String     @id @default(cuid())
+  anilistId  Int        @unique
   title      String
   coverImage String?
-  addedAt    DateTime @default(now())
+  addedAt    DateTime   @default(now())
+  feedItems  FeedItem[]
 }
 
 model TrackedGame {
-  id             String    @id @default(cuid())
-  rawgId         Int       @unique
+  id             String     @id @default(cuid())
+  rawgId         Int        @unique
   name           String
   image          String?
   lastReleasedAt DateTime?
-  addedAt        DateTime  @default(now())
+  addedAt        DateTime   @default(now())
+  feedItems      FeedItem[]
 }
 
 // Shared by all three RSS feeds - one row per YouTube video / aired anime
 // episode / game release event. Populated by POST /api/poll, read by
-// GET /rss/{category}.xml.
+// GET /rss/{category}.xml. Exactly one of the tracked*Id fields is set,
+// matching `category` - untracking a source cascades to delete its items.
 model FeedItem {
   id          String       @id @default(cuid())
   category    FeedCategory
@@ -50,6 +54,15 @@ model FeedItem {
   description String?
   publishedAt DateTime
   createdAt   DateTime     @default(now())
+
+  trackedChannelId String?
+  trackedChannel   TrackedChannel? @relation(fields: [trackedChannelId], references: [id], onDelete: Cascade)
+
+  trackedAnimeId String?
+  trackedAnime   TrackedAnime? @relation(fields: [trackedAnimeId], references: [id], onDelete: Cascade)
+
+  trackedGameId String?
+  trackedGame   TrackedGame? @relation(fields: [trackedGameId], references: [id], onDelete: Cascade)
 
   @@index([category, publishedAt])
 }
