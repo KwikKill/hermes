@@ -79,7 +79,7 @@ export default function HermesWidgetPage() {
 
   if (items === null) {
     return (
-      <main className="flex h-screen items-center justify-center text-sm text-muted">
+      <main className="flex h-screen items-center justify-center bg-card text-sm text-muted">
         Chargement...
       </main>
     );
@@ -95,16 +95,16 @@ export default function HermesWidgetPage() {
   );
 
   return (
-    <main className="flex h-screen flex-col gap-3 p-3">
+    <main className="flex h-screen flex-col gap-3 bg-card p-3">
       <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-base font-bold">Hermes Feed</h1>
-        <span className="rounded-full bg-card border border-card-border px-2.5 py-0.5 text-xs text-muted">
+        <span className="rounded-full bg-card-item border border-card-border px-2.5 py-0.5 text-xs text-muted">
           {items.length} items
         </span>
       </div>
 
       {upcoming.length > 0 && (
-        <details className="shrink-0 rounded-lg border border-card-border bg-card">
+        <details className="shrink-0 rounded-lg border border-card-border bg-card-item">
           <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
             Upcoming ({upcoming.length})
           </summary>
@@ -134,7 +134,7 @@ export default function HermesWidgetPage() {
             type="button"
             disabled={currentPage <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="rounded-md border border-card-border bg-card px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md border border-card-border bg-card-item px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
           >
             &larr;
           </button>
@@ -145,7 +145,7 @@ export default function HermesWidgetPage() {
             type="button"
             disabled={currentPage >= pageCount}
             onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-            className="rounded-md border border-card-border bg-card px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-md border border-card-border bg-card-item px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
           >
             &rarr;
           </button>
@@ -164,7 +164,7 @@ function FeedCard({
 }) {
   return (
     <div
-      className="flex items-start gap-2 rounded-lg border border-card-border bg-card p-2 transition-opacity"
+      className="flex items-start gap-2 rounded-lg border border-card-border bg-card-item p-2 transition-opacity"
       style={{ opacity: item.seen ? 0.5 : 1 }}
     >
       {item.image ? (
