@@ -55,6 +55,11 @@ model FeedItem {
   publishedAt DateTime
   createdAt   DateTime     @default(now())
   seen        Boolean      @default(false)
+  // Set when this item is included in a nightly Discord digest (see
+  // POST /api/digest) - keeps a digest from re-suggesting the same item
+  // every night once it's been surfaced, regardless of whether it gets
+  // marked seen afterwards.
+  notifiedAt  DateTime?
 
   trackedChannelId String?
   trackedChannel   TrackedChannel? @relation(fields: [trackedChannelId], references: [id], onDelete: Cascade)

@@ -15,6 +15,14 @@ type FeedItemPayload = {
   publishedAtDisplay: string;
 };
 
+type FeedResponse = {
+  upcoming: FeedItemPayload[];
+  recent: FeedItemPayload[];
+  recentTotal: number;
+  page: number;
+  pageSize: number;
+};
+
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const PAGE_SIZE = 8;
 
@@ -25,29 +33,30 @@ const CATEGORY_STYLES: Record<FeedItemPayload["category"], string> = {
 };
 
 export default function HermesWidgetPage() {
-  const [items, setItems] = useState<FeedItemPayload[] | null>(null);
+  const [data, setData] = useState<FeedResponse | null>(null);
   const [page, setPage] = useState(1);
 
-  const load = useCallback(async (): Promise<FeedItemPayload[]> => {
-    const res = await fetch("/rss/feed/all", { cache: "no-store" });
-    const data: { items: FeedItemPayload[] } = await res.json();
-    return data.items;
+  const load = useCallback(async (pageToLoad: number): Promise<FeedResponse> => {
+    const res = await fetch(`/rss/feed/all?page=${pageToLoad}&pageSize=${PAGE_SIZE}`, {
+      cache: "no-store",
+    });
+    return res.json();
   }, []);
 
-  // Race-safe fetch-on-mount + polling: `ignore` skips the setState if this
-  // effect was cleaned up before an in-flight request resolved.
+  // Race-safe fetch + polling: `ignore` skips the setState if this effect
+  // was cleaned up (page changed, or unmount) before the request resolved.
   useEffect(() => {
     let ignore = false;
 
     (async () => {
-      const items = await load();
-      if (!ignore) setItems(items);
+      const result = await load(page);
+      if (!ignore) setData(result);
     })();
 
     const interval = setInterval(() => {
       (async () => {
-        const items = await load();
-        if (!ignore) setItems(items);
+        const result = await load(page);
+        if (!ignore) setData(result);
       })();
     }, REFRESH_INTERVAL_MS);
 
@@ -55,11 +64,21 @@ export default function HermesWidgetPage() {
       ignore = true;
       clearInterval(interval);
     };
-  }, [load]);
+  }, [load, page]);
 
   const toggleSeen = async (id: string, seen: boolean) => {
-    setItems((current) =>
-      current?.map((item) => (item.id === id ? { ...item, seen } : item)) ?? null
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            upcoming: current.upcoming.map((item) =>
+              item.id === id ? { ...item, seen } : item
+            ),
+            recent: current.recent.map((item) =>
+              item.id === id ? { ...item, seen } : item
+            ),
+          }
+        : current
     );
 
     const res = await fetch(`/rss/feed/${id}/seen`, {
@@ -70,14 +89,23 @@ export default function HermesWidgetPage() {
 
     if (!res.ok) {
       // Revert on failure - the optimistic update above was wrong.
-      setItems((current) =>
-        current?.map((item) => (item.id === id ? { ...item, seen: !seen } : item)) ??
-        null
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              upcoming: current.upcoming.map((item) =>
+                item.id === id ? { ...item, seen: !seen } : item
+              ),
+              recent: current.recent.map((item) =>
+                item.id === id ? { ...item, seen: !seen } : item
+              ),
+            }
+          : current
       );
     }
   };
 
-  if (items === null) {
+  if (data === null) {
     return (
       <main className="flex h-screen items-center justify-center bg-card text-sm text-muted">
         Chargement...
@@ -85,21 +113,16 @@ export default function HermesWidgetPage() {
     );
   }
 
-  const upcoming = items.filter((item) => item.isFuture);
-  const recent = items.filter((item) => !item.isFuture);
-  const pageCount = Math.max(1, Math.ceil(recent.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const pageItems = recent.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
+  const { upcoming, recent, recentTotal } = data;
+  const pageCount = Math.max(1, Math.ceil(recentTotal / PAGE_SIZE));
+  const totalItems = recentTotal + upcoming.length;
 
   return (
     <main className="flex h-screen flex-col gap-3 bg-card p-3">
       <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-base font-bold">Hermes Feed</h1>
         <span className="rounded-full bg-card-item border border-card-border px-2.5 py-0.5 text-xs text-muted">
-          {items.length} items
+          {totalItems} items
         </span>
       </div>
 
@@ -123,7 +146,7 @@ export default function HermesWidgetPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {pageItems.map((item) => (
+        {recent.map((item) => (
           <FeedCard key={item.id} item={item} onToggleSeen={toggleSeen} />
         ))}
       </div>
@@ -132,18 +155,18 @@ export default function HermesWidgetPage() {
         <div className="flex shrink-0 items-center justify-center gap-3 text-xs">
           <button
             type="button"
-            disabled={currentPage <= 1}
+            disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             className="rounded-md border border-card-border bg-card-item px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
           >
             &larr;
           </button>
           <span className="text-muted">
-            Page {currentPage} / {pageCount}
+            Page {page} / {pageCount}
           </span>
           <button
             type="button"
-            disabled={currentPage >= pageCount}
+            disabled={page >= pageCount}
             onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
             className="rounded-md border border-card-border bg-card-item px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
           >
