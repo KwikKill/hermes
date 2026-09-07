@@ -16,6 +16,7 @@ type FeedItemPayload = {
 };
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const PAGE_SIZE = 8;
 
 const CATEGORY_STYLES: Record<FeedItemPayload["category"], string> = {
   YOUTUBE: "bg-red-500/15 text-red-400",
@@ -25,6 +26,7 @@ const CATEGORY_STYLES: Record<FeedItemPayload["category"], string> = {
 
 export default function HermesWidgetPage() {
   const [items, setItems] = useState<FeedItemPayload[] | null>(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async (): Promise<FeedItemPayload[]> => {
     const res = await fetch("/rss/feed/all", { cache: "no-store" });
@@ -77,7 +79,7 @@ export default function HermesWidgetPage() {
 
   if (items === null) {
     return (
-      <main className="flex h-screen items-center justify-center text-sm text-neutral-400">
+      <main className="flex h-screen items-center justify-center text-sm text-muted">
         Chargement...
       </main>
     );
@@ -85,22 +87,28 @@ export default function HermesWidgetPage() {
 
   const upcoming = items.filter((item) => item.isFuture);
   const recent = items.filter((item) => !item.isFuture);
+  const pageCount = Math.max(1, Math.ceil(recent.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageItems = recent.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
 
   return (
     <main className="flex h-screen flex-col gap-3 p-3">
       <div className="flex shrink-0 items-center justify-between">
         <h1 className="text-base font-bold">Hermes Feed</h1>
-        <span className="rounded-full bg-neutral-500/15 px-2.5 py-0.5 text-xs text-neutral-400">
+        <span className="rounded-full bg-card border border-card-border px-2.5 py-0.5 text-xs text-muted">
           {items.length} items
         </span>
       </div>
 
       {upcoming.length > 0 && (
-        <details className="shrink-0 rounded-lg border border-neutral-500/20">
+        <details className="shrink-0 rounded-lg border border-card-border bg-card">
           <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
             Upcoming ({upcoming.length})
           </summary>
-          <div className="flex flex-col gap-2 border-t border-neutral-500/20 p-2">
+          <div className="flex flex-col gap-2 border-t border-card-border p-2">
             {upcoming.map((item) => (
               <FeedCard key={item.id} item={item} onToggleSeen={toggleSeen} />
             ))}
@@ -108,17 +116,41 @@ export default function HermesWidgetPage() {
         </details>
       )}
 
-      <div className="flex shrink-0 items-center gap-2 text-xs text-neutral-400">
-        <span className="h-px flex-1 bg-neutral-500/20" />
+      <div className="flex shrink-0 items-center gap-2 text-xs text-muted">
+        <span className="h-px flex-1 bg-card-border" />
         Recent
-        <span className="h-px flex-1 bg-neutral-500/20" />
+        <span className="h-px flex-1 bg-card-border" />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {recent.map((item) => (
+        {pageItems.map((item) => (
           <FeedCard key={item.id} item={item} onToggleSeen={toggleSeen} />
         ))}
       </div>
+
+      {pageCount > 1 && (
+        <div className="flex shrink-0 items-center justify-center gap-3 text-xs">
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="rounded-md border border-card-border bg-card px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            &larr;
+          </button>
+          <span className="text-muted">
+            Page {currentPage} / {pageCount}
+          </span>
+          <button
+            type="button"
+            disabled={currentPage >= pageCount}
+            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            className="rounded-md border border-card-border bg-card px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            &rarr;
+          </button>
+        </div>
+      )}
     </main>
   );
 }
@@ -132,7 +164,7 @@ function FeedCard({
 }) {
   return (
     <div
-      className="flex items-start gap-2 rounded-lg border border-neutral-500/20 p-2 transition-opacity"
+      className="flex items-start gap-2 rounded-lg border border-card-border bg-card p-2 transition-opacity"
       style={{ opacity: item.seen ? 0.5 : 1 }}
     >
       {item.image ? (
@@ -152,7 +184,7 @@ function FeedCard({
             {item.category}
           </span>
           {item.source && (
-            <span className="truncate text-[11px] text-neutral-400">{item.source}</span>
+            <span className="truncate text-[11px] text-muted">{item.source}</span>
           )}
         </div>
         <a
@@ -164,9 +196,9 @@ function FeedCard({
           {item.title}
         </a>
         {item.description && (
-          <p className="line-clamp-2 text-xs text-neutral-400">{item.description}</p>
+          <p className="line-clamp-2 text-xs text-muted">{item.description}</p>
         )}
-        <p className="text-[11px] text-neutral-500">{item.publishedAtDisplay}</p>
+        <p className="text-[11px] text-muted">{item.publishedAtDisplay}</p>
       </div>
 
       <input
