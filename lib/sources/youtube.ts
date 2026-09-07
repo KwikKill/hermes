@@ -70,10 +70,10 @@ function parseIso8601Duration(duration: string): number {
 }
 
 // Videos this short or shorter are treated as Shorts and filtered out.
-// YouTube's own Shorts limit moved from 60s to 3min in 2024, but there's no
+// YouTube's own Shorts limit moved from 60s to 3min in 2024, and there's no
 // reliable "is this a Short" flag on the public API - duration is the best
-// available signal, so this only catches the classic/most common case.
-const SHORT_MAX_SECONDS = 60;
+// available signal, so this follows the current 3min cutoff.
+const SHORT_MAX_SECONDS = 3 * 60;
 
 // `videos.list` costs 1 quota unit total regardless of how many ids are
 // passed (up to 50) - cheap enough to call on every poll for the handful of

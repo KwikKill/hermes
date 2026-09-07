@@ -54,6 +54,7 @@ model FeedItem {
   description String?
   publishedAt DateTime
   createdAt   DateTime     @default(now())
+  seen        Boolean      @default(false)
 
   trackedChannelId String?
   trackedChannel   TrackedChannel? @relation(fields: [trackedChannelId], references: [id], onDelete: Cascade)

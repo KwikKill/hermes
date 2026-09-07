@@ -28,6 +28,7 @@ export async function GET() {
       description: item.description,
       source,
       image,
+      seen: item.seen,
       isFuture: item.publishedAt > now,
       publishedAtDisplay: item.publishedAt.toLocaleString("fr-FR", {
         day: "2-digit",
