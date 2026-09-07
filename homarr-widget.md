@@ -1,77 +1,31 @@
 # Homarr widget - Hermes Feed
 
-Custom JSX widget pointing at `https://hermes.somi.<WEBSITE_HOST>/rss/feed/all`
-as its data source. Kept here (not consumed by the app) purely as a copy the
-user pastes into Homarr's widget editor by hand - update this file whenever
-the widget changes so the two don't drift.
+Homarr's **Custom API widget** renders its JSX template in a sandbox that
+rejects `fetch`, `window`, `document`, `eval`, `Function`, `import`,
+`require`, and `globalThis` outright - so a real checkbox that persists a
+click has no way to call an API from that sandbox. Link-based workarounds
+(navigating to a toggle endpoint) still miss the actual ask: an interactive
+control that updates in place.
 
-```jsx
-<Stack gap='md' p='xs'>
-  <Group justify='space-between' wrap='nowrap'>
-    <Title order={3}>Hermes Feed</Title>
-    <Badge size='lg' color='gray' variant='light'>{data.items.length} items</Badge>
-  </Group>
+So this isn't a Custom API widget config. It's a real page in the app,
+`/rss/widget` ([app/rss/widget/page.tsx](app/rss/widget/page.tsx)), embedded
+in Homarr as an **iframe / Website widget** pointing at:
 
-  <Collapsible title={'Upcoming (' + data.items.filter(i => i.isFuture).length + ')'} defaultOpen={false}>
-    <Stack gap='xs' pt='xs'>
-      {data.items.filter(i => i.isFuture).map(item =>
-        <Card withBorder p='xs' radius='md' style={{opacity: item.seen ? 0.5 : 1}}>
-          <Group wrap='nowrap' align='flex-start'>
-            {item.image ? <Avatar src={item.image} size={40} radius='sm' /> : <ThemeIcon size={40} radius='sm' color={item.category === 'YOUTUBE' ? 'red' : item.category === 'ANIME' ? 'grape' : 'teal'}><Text fw={700} size='xs'>{item.category.slice(0,1)}</Text></ThemeIcon>}
-            <Stack gap={2} style={{flex: 1, minWidth: 0}}>
-              <Group gap='xs' wrap='nowrap'>
-                <Badge size='xs' color={item.category === 'YOUTUBE' ? 'red' : item.category === 'ANIME' ? 'grape' : 'teal'} variant='light'>{item.category}</Badge>
-                <Text size='xs' c='dimmed' truncate>{item.source}</Text>
-              </Group>
-              <Anchor href={item.link} target='_blank' underline='hover'>
-                <Text size='sm' fw={600} lineClamp={2} td={item.seen ? 'line-through' : undefined}>{item.title}</Text>
-              </Anchor>
-              <Text size='xs' c='dimmed'>{item.publishedAtDisplay}</Text>
-            </Stack>
-            <Checkbox
-              checked={item.seen}
-              onChange={(e) => fetch('https://hermes.somi.<WEBSITE_HOST>/rss/feed/' + item.id + '/seen', {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({seen: e.currentTarget.checked})})}
-            />
-          </Group>
-        </Card>
-      )}
-    </Stack>
-  </Collapsible>
-
-  <Divider label='Recent' labelPosition='center' />
-
-  <ScrollArea h={360}>
-    <PaginatedList pageSize={8}>
-      {data.items.filter(i => !i.isFuture).map(item =>
-        <Card withBorder p='xs' radius='md' mb='xs' style={{opacity: item.seen ? 0.5 : 1}}>
-          <Group wrap='nowrap' align='flex-start'>
-            {item.image ? <Avatar src={item.image} size={40} radius='sm' /> : <ThemeIcon size={40} radius='sm' color={item.category === 'YOUTUBE' ? 'red' : item.category === 'ANIME' ? 'grape' : 'teal'}><Text fw={700} size='xs'>{item.category.slice(0,1)}</Text></ThemeIcon>}
-            <Stack gap={2} style={{flex: 1, minWidth: 0}}>
-              <Group gap='xs' wrap='nowrap'>
-                <Badge size='xs' color={item.category === 'YOUTUBE' ? 'red' : item.category === 'ANIME' ? 'grape' : 'teal'} variant='light'>{item.category}</Badge>
-                <Text size='xs' c='dimmed' truncate>{item.source}</Text>
-              </Group>
-              <Anchor href={item.link} target='_blank' underline='hover'>
-                <Text size='sm' fw={600} lineClamp={2} td={item.seen ? 'line-through' : undefined}>{item.title}</Text>
-              </Anchor>
-              {item.description ? <Text size='xs' c='dimmed' lineClamp={2}>{item.description}</Text> : null}
-              <Text size='xs' c='dimmed'>{item.publishedAtDisplay}</Text>
-            </Stack>
-            <Checkbox
-              checked={item.seen}
-              onChange={(e) => fetch('https://hermes.somi.<WEBSITE_HOST>/rss/feed/' + item.id + '/seen', {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({seen: e.currentTarget.checked})})}
-            />
-          </Group>
-        </Card>
-      )}
-    </PaginatedList>
-  </ScrollArea>
-</Stack>
+```
+https://hermes.somi.<WEBSITE_HOST>/rss/widget
 ```
 
-Replace `<WEBSITE_HOST>` with the real domain. `Checkbox` needs to be available in
-whatever component scope Homarr's custom widget exposes (same family as
-`Card`/`Stack`/`Badge` etc. already in use) - if Homarr's widget sandbox
-doesn't expose Mantine's `Checkbox`, swap it for a plain
-`<input type='checkbox' checked={item.seen} onChange={...} />` with the same
-`onChange` body.
+That page is a normal client-rendered React page with a real `<input
+type="checkbox">` wired to `PATCH /rss/feed/[id]/seen` via same-origin
+`fetch` - no sandbox, no CORS, instant visual feedback (checking a box dims
+the card and strikes the title immediately, no waiting on a data refresh).
+It polls `/rss/feed/all` every 5 minutes to pick up new items.
+
+Lives under `/rss/` (not `/api/` or `/`) for the same reason as the JSON
+feed: Caddy only excludes `/rss/*` from the Authentik forward_auth gate, and
+an iframe can't do an interactive SSO login - see
+[Caddyfile.site](Caddyfile.site).
+
+In Homarr: add a **Website/iframe widget** (not Custom API), paste the URL
+above, and size it - the page itself scrolls internally past its own header,
+so any iframe height works.

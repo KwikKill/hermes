@@ -1,24 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// Toggles/sets the "seen" flag on a FeedItem - called by the Homarr widget's
-// checkbox. Lives under /rss/ (not /api/) on purpose: Caddy only excludes
-// /rss/* from the Authentik forward_auth gate, and the widget's browser-side
-// fetch can't do an interactive SSO login. See Caddyfile.site.
-//
-// CORS headers are set here rather than in Caddy: the widget calls this
-// directly from the visitor's browser on the Homarr domain, unlike the GET
-// /rss/feed/all data source which Homarr's own backend fetches server-side.
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "PATCH, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
-}
-
+// Toggles/sets the "seen" flag on a FeedItem - called by the checkbox on
+// /rss/widget (same-origin fetch, embedded in Homarr as an iframe widget).
+// Lives under /rss/ (not /api/) on purpose: Caddy only excludes /rss/* from
+// the Authentik forward_auth gate, and an iframe can't do an interactive SSO
+// login. See Caddyfile.site.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -29,7 +16,7 @@ export async function PATCH(
   if (typeof body.seen !== "boolean") {
     return NextResponse.json(
       { error: "Body must be { seen: boolean }" },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400 }
     );
   }
 
@@ -38,8 +25,5 @@ export async function PATCH(
     data: { seen: body.seen },
   });
 
-  return NextResponse.json(
-    { id: item.id, seen: item.seen },
-    { headers: CORS_HEADERS }
-  );
+  return NextResponse.json({ id: item.id, seen: item.seen });
 }
