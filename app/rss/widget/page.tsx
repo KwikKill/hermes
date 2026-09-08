@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 type FeedItemPayload = {
   id: string;
@@ -35,6 +35,14 @@ const CATEGORY_STYLES: Record<FeedItemPayload["category"], string> = {
 export default function HermesWidgetPage() {
   const [data, setData] = useState<FeedResponse | null>(null);
   const [page, setPage] = useState(1);
+  const recentListRef = useRef<HTMLDivElement>(null);
+
+  // Pagination should feel like a fresh page, not a scroll-preserving
+  // in-place update - snap the "Recent" list back to its top on every page
+  // change (not on the periodic auto-refresh, which keeps the same page).
+  useEffect(() => {
+    recentListRef.current?.scrollTo({ top: 0 });
+  }, [page]);
 
   const load = useCallback(async (pageToLoad: number): Promise<FeedResponse> => {
     const res = await fetch(`/rss/feed/all?page=${pageToLoad}&pageSize=${PAGE_SIZE}`, {
@@ -145,7 +153,7 @@ export default function HermesWidgetPage() {
         <span className="h-px flex-1 bg-card-border" />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <div ref={recentListRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {recent.map((item) => (
           <FeedCard key={item.id} item={item} onToggleSeen={toggleSeen} />
         ))}

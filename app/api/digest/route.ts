@@ -7,6 +7,10 @@ const DEFAULT_MAX_ITEMS = 8;
 // a brand new channel/anime/game to a 0% or 100% "interest" score.
 const MIN_HISTORY_FOR_SCORE = 3;
 const DEFAULT_SCORE = 0.5;
+// Candidates older than this never get suggested, no matter how high their
+// source's interest score is - otherwise a year-old backlog video from a
+// well-liked channel could keep winning over what actually came out today.
+const MAX_AGE_DAYS = 7;
 
 type Category = "YOUTUBE" | "ANIME" | "GAMES";
 
@@ -44,6 +48,7 @@ function sourceLabel(item: CandidateItem): string {
 // point is not to notify for everything (see route docstring below).
 async function pickDigestItems(maxItems: number): Promise<CandidateItem[]> {
   const now = new Date();
+  const oldestAllowed = new Date(now.getTime() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
 
   const history = await prisma.feedItem.findMany({
     where: { publishedAt: { lte: now } },
@@ -73,7 +78,11 @@ async function pickDigestItems(maxItems: number): Promise<CandidateItem[]> {
   }
 
   const candidates: CandidateItem[] = await prisma.feedItem.findMany({
-    where: { seen: false, publishedAt: { lte: now }, notifiedAt: null },
+    where: {
+      seen: false,
+      notifiedAt: null,
+      publishedAt: { lte: now, gte: oldestAllowed },
+    },
     orderBy: { publishedAt: "desc" },
     select: {
       id: true,
