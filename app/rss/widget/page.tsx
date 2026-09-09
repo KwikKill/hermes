@@ -35,7 +35,39 @@ const CATEGORY_STYLES: Record<FeedItemPayload["category"], string> = {
 export default function HermesWidgetPage() {
   const [data, setData] = useState<FeedResponse | null>(null);
   const [page, setPage] = useState(1);
+  // undefined = still loading, null = nothing to recommend right now.
+  const [nextItem, setNextItem] = useState<FeedItemPayload | null | undefined>(undefined);
   const recentListRef = useRef<HTMLDivElement>(null);
+
+  const loadNext = useCallback(async (): Promise<FeedItemPayload | null> => {
+    const res = await fetch("/rss/feed/next", { cache: "no-store" });
+    const result: { item: FeedItemPayload | null } = await res.json();
+    return result.item;
+  }, []);
+
+  // Same race-safe fetch + polling pattern as the main list below, kept
+  // separate since "next media" isn't paginated and refreshes independently
+  // of which page of "Recent" is showing.
+  useEffect(() => {
+    let ignore = false;
+
+    (async () => {
+      const item = await loadNext();
+      if (!ignore) setNextItem(item);
+    })();
+
+    const interval = setInterval(() => {
+      (async () => {
+        const item = await loadNext();
+        if (!ignore) setNextItem(item);
+      })();
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      ignore = true;
+      clearInterval(interval);
+    };
+  }, [loadNext]);
 
   // Pagination should feel like a fresh page, not a scroll-preserving
   // in-place update - snap the "Recent" list back to its top on every page
@@ -110,7 +142,14 @@ export default function HermesWidgetPage() {
             }
           : current
       );
+      return;
     }
+
+    // Any seen/unseen change can move the ranking - re-pull the current
+    // best recommendation (this is how "mark as read -> next suggestion
+    // appears" actually happens, there's no local next-in-line to fall
+    // back to since ranking depends on live seen-ratios).
+    setNextItem(await loadNext());
   };
 
   if (data === null) {
@@ -133,6 +172,10 @@ export default function HermesWidgetPage() {
           {totalItems} items
         </span>
       </div>
+
+      {page === 1 && nextItem !== undefined && (
+        <NextUpCard item={nextItem} onToggleSeen={toggleSeen} />
+      )}
 
       {upcoming.length > 0 && (
         <details className="shrink-0 rounded-lg border border-card-border bg-card-item">
@@ -183,6 +226,72 @@ export default function HermesWidgetPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function NextUpCard({
+  item,
+  onToggleSeen,
+}: {
+  item: FeedItemPayload | null;
+  onToggleSeen: (id: string, seen: boolean) => void;
+}) {
+  return (
+    <div className="shrink-0 rounded-lg border-2 border-teal-500/50 bg-card-item p-2">
+      <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-teal-400 uppercase">
+        Prochain media a regarder
+      </p>
+
+      {item === null ? (
+        <p className="text-xs text-muted">Rien a recommander pour l&apos;instant.</p>
+      ) : (
+        <div className="flex items-start gap-2">
+          {item.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.image}
+              alt=""
+              className="h-12 w-12 shrink-0 rounded-md object-cover"
+            />
+          ) : (
+            <div
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-sm font-bold ${CATEGORY_STYLES[item.category]}`}
+            >
+              {item.category.slice(0, 1)}
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[item.category]}`}
+              >
+                {item.category}
+              </span>
+              {item.source && (
+                <span className="truncate text-[11px] text-muted">{item.source}</span>
+              )}
+            </div>
+            <a
+              href={item.link}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-sm font-semibold leading-snug hover:underline"
+            >
+              {item.title}
+            </a>
+          </div>
+
+          <input
+            type="checkbox"
+            checked={false}
+            onChange={(e) => onToggleSeen(item.id, e.target.checked)}
+            className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
+            aria-label="Marquer comme vu"
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
