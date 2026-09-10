@@ -3,16 +3,15 @@
 # calling POST /api/backfill/durations in a loop (50 videos = 1 YouTube
 # quota unit per call) until nothing new comes back.
 #
-#   HERMES_POLL_SECRET=...  ./scripts/backfill-durations.sh
+# /api/* is behind Authentik forward_auth (only /rss/* isn't), so this must
+# hit hermes directly on the docker network, not the public URL. Run it
+# through the hermes-cron sidecar, which is already on that network with
+# HERMES_POLL_SECRET in its env:
 #
-# HERMES_URL defaults to http://localhost:3000. From the VPS host, hermes is
-# NOT on localhost (it's `expose:`, not `ports:`) - run this from inside the
-# docker network with HERMES_URL=http://hermes:3000, e.g.:
+#   ./compose.sh exec -T -e HERMES_URL=http://hermes:3000 hermes-cron sh < hermes/scripts/backfill-durations.sh
 #
-#   docker compose exec -e HERMES_POLL_SECRET=xxx hermes \
-#     sh -c 'HERMES_URL=http://localhost:3000 sh -s' < scripts/backfill-durations.sh
-#
-# or point HERMES_URL at the public https URL.
+# HERMES_URL defaults to http://localhost:3000 (works when run from inside
+# the hermes container itself).
 set -eu
 
 : "${HERMES_POLL_SECRET:?set HERMES_POLL_SECRET}"
