@@ -1,10 +1,16 @@
+import Link from "next/link";
 import TrackerSection from "@/components/TrackerSection";
 
 export default function Home() {
   return (
     <main className="mx-auto max-w-5xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Hermes</h1>
+        <div className="flex items-baseline justify-between gap-4">
+          <h1 className="text-2xl font-bold">Hermes</h1>
+          <Link href="/recommend" className="text-sm underline">
+            Réglage des recommandations
+          </Link>
+        </div>
         <p className="text-sm text-neutral-400">
           Recherche et ajoute ce que tu veux suivre. Les flux RSS sont générés
           automatiquement : <code>/rss/youtube.xml</code>,{" "}

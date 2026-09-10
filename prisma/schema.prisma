@@ -13,6 +13,20 @@ enum FeedCategory {
   GAMES
 }
 
+// Single-row table (id is always "singleton") holding the tunable
+// parameters of the recommendation algorithm - see lib/recommend.ts. Kept
+// in the DB rather than env vars so the tuning page (/recommend) can change
+// them live and have it take effect for the digest, the widget's "next
+// media" card, and the tuning preview itself, all at once.
+model RecommendationSettings {
+  id           String   @id @default("singleton")
+  halfLifeDays Float    @default(75)
+  priorAlpha   Float    @default(2)
+  priorBeta    Float    @default(2)
+  maxAgeDays   Int      @default(7)
+  updatedAt    DateTime @updatedAt
+}
+
 model TrackedChannel {
   id        String     @id @default(cuid())
   channelId String     @unique

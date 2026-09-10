@@ -1,14 +1,66 @@
 import { prisma } from "@/lib/prisma";
 
-// A source needs at least this many past (published) items before its
-// seen-ratio is trusted - otherwise one early click either way would swing
-// a brand new channel/anime/game to a 0% or 100% "interest" score.
-const MIN_HISTORY_FOR_SCORE = 3;
-const DEFAULT_SCORE = 0.5;
-// Candidates older than this never get suggested, no matter how high their
-// source's interest score is - otherwise a year-old backlog video from a
-// well-liked channel could keep winning over what actually came out today.
-const MAX_AGE_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type RecoParams = {
+  // Recency half-life (days): a historical item's weight is halved every
+  // this-many days of age. Higher = long-past taste still counts.
+  halfLifeDays: number;
+  // Beta prior pseudo-counts. alpha = beta = 2 means "start every source at
+  // 0.5, worth ~4 observations" - a source needs clearly more weighted
+  // evidence than that before its own ratio dominates.
+  priorAlpha: number;
+  priorBeta: number;
+  // Freshness window (days). Doubles as the "fair chance" cutoff: an unseen
+  // item only counts as a settled negative once it's older than this, and
+  // items younger than this are the pool that can be recommended.
+  maxAgeDays: number;
+};
+
+export const DEFAULT_PARAMS: RecoParams = {
+  halfLifeDays: 75,
+  priorAlpha: 2,
+  priorBeta: 2,
+  maxAgeDays: 7,
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+// Clamp everything to sane ranges - the tuning UI sends these straight from
+// number inputs, and a 0 half-life or negative prior would break scoring.
+export function sanitizeParams(raw: Partial<RecoParams> | null | undefined): RecoParams {
+  const num = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return {
+    halfLifeDays: clamp(num(raw?.halfLifeDays, DEFAULT_PARAMS.halfLifeDays), 1, 3650),
+    priorAlpha: clamp(num(raw?.priorAlpha, DEFAULT_PARAMS.priorAlpha), 0.01, 1000),
+    priorBeta: clamp(num(raw?.priorBeta, DEFAULT_PARAMS.priorBeta), 0.01, 1000),
+    maxAgeDays: Math.round(clamp(num(raw?.maxAgeDays, DEFAULT_PARAMS.maxAgeDays), 1, 3650)),
+  };
+}
+
+export async function getRecommendationSettings(): Promise<RecoParams> {
+  const row = await prisma.recommendationSettings.upsert({
+    where: { id: "singleton" },
+    update: {},
+    create: {},
+  });
+  return sanitizeParams(row);
+}
+
+export async function saveRecommendationSettings(
+  raw: Partial<RecoParams>
+): Promise<RecoParams> {
+  const params = sanitizeParams(raw);
+  await prisma.recommendationSettings.upsert({
+    where: { id: "singleton" },
+    update: params,
+    create: { id: "singleton", ...params },
+  });
+  return params;
+}
 
 export type Category = "YOUTUBE" | "ANIME" | "GAMES";
 
@@ -25,6 +77,8 @@ export type RankedItem = {
   trackedAnime: { title: string; coverImage: string | null } | null;
   trackedGame: { name: string; image: string | null } | null;
 };
+
+export type ScoredItem = { item: RankedItem; score: number };
 
 function sourceKey(item: {
   trackedChannelId: string | null;
@@ -46,48 +100,67 @@ export function sourceImage(item: RankedItem): string | null {
   );
 }
 
-// Ranks unseen, already-published (last MAX_AGE_DAYS days only), items by
-// how much the user has historically engaged with that item's source
-// (channel/anime/game) - approximated as the fraction of that source's past
-// items marked "seen". Shared by the nightly Discord digest
-// (app/api/digest/route.ts) and the "next media" card on /rss/widget
-// (app/rss/feed/next/route.ts) - same ranking, two different consumers.
-export async function rankCandidates(options: {
+// Ranks unseen, recent (last maxAgeDays days) items by how much the user
+// has historically engaged with that item's source. The per-source score is:
+//
+//     score = (Σ w·[seen]  +  α)  /  (Σ w  +  α + β)
+//
+// summed over "settled" history items only - an item is settled if it was
+// seen (an immediate positive) or is older than maxAgeDays and still unseen
+// (a settled negative). Fresher unseen items are pending and don't count.
+// Each item's weight w = 0.5^(ageDays / halfLifeDays), so stale history
+// fades toward the α/β prior instead of pinning a once-loved source at 1.0
+// forever.
+//
+// Shared by the nightly Discord digest (app/api/digest/route.ts), the
+// widget's "next media" card (app/rss/feed/next/route.ts) and the tuning
+// page preview (app/api/recommend/preview/route.ts). Params come from the
+// DB (RecommendationSettings) unless the caller passes an override, which
+// only the tuning preview does.
+export async function rankCandidatesScored(options: {
   limit: number;
-  // The digest excludes items it already suggested before (see
-  // FeedItem.notifiedAt); the "next media" card doesn't - it should always
-  // be able to show the current best recommendation regardless of whether
-  // it was already pushed to Discord.
   excludeNotified: boolean;
-}): Promise<RankedItem[]> {
-  const now = new Date();
-  const oldestAllowed = new Date(now.getTime() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+  params?: Partial<RecoParams>;
+}): Promise<ScoredItem[]> {
+  const { halfLifeDays, priorAlpha, priorBeta, maxAgeDays } = options.params
+    ? sanitizeParams(options.params)
+    : await getRecommendationSettings();
+
+  const nowMs = Date.now();
+  const now = new Date(nowMs);
+  const oldestAllowed = new Date(nowMs - maxAgeDays * DAY_MS);
 
   const history = await prisma.feedItem.findMany({
     where: { publishedAt: { lte: now } },
     select: {
       seen: true,
+      publishedAt: true,
       trackedChannelId: true,
       trackedAnimeId: true,
       trackedGameId: true,
     },
   });
 
-  const stats = new Map<string, { seen: number; total: number }>();
+  const stats = new Map<string, { wSeen: number; wTotal: number }>();
   for (const item of history) {
     const key = sourceKey(item);
     if (!key) continue;
-    const entry = stats.get(key) ?? { seen: 0, total: 0 };
-    entry.total += 1;
-    if (item.seen) entry.seen += 1;
+    const ageDays = (nowMs - item.publishedAt.getTime()) / DAY_MS;
+    const settled = item.seen || ageDays > maxAgeDays;
+    if (!settled) continue;
+    const weight = Math.pow(0.5, ageDays / halfLifeDays);
+    const entry = stats.get(key) ?? { wSeen: 0, wTotal: 0 };
+    entry.wTotal += weight;
+    if (item.seen) entry.wSeen += weight;
     stats.set(key, entry);
   }
 
+  const priorMean = priorAlpha / (priorAlpha + priorBeta);
   function interestScore(key: string | null): number {
-    if (!key) return DEFAULT_SCORE;
+    if (!key) return priorMean;
     const entry = stats.get(key);
-    if (!entry || entry.total < MIN_HISTORY_FOR_SCORE) return DEFAULT_SCORE;
-    return entry.seen / entry.total;
+    if (!entry) return priorMean;
+    return (entry.wSeen + priorAlpha) / (entry.wTotal + priorAlpha + priorBeta);
   }
 
   const candidates: RankedItem[] = await prisma.feedItem.findMany({
@@ -115,6 +188,13 @@ export async function rankCandidates(options: {
   return candidates
     .map((item) => ({ item, score: interestScore(sourceKey(item)) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, options.limit)
-    .map(({ item }) => item);
+    .slice(0, options.limit);
+}
+
+export async function rankCandidates(options: {
+  limit: number;
+  excludeNotified: boolean;
+  params?: Partial<RecoParams>;
+}): Promise<RankedItem[]> {
+  return (await rankCandidatesScored(options)).map((scored) => scored.item);
 }
