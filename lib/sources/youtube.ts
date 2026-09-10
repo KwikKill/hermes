@@ -77,8 +77,9 @@ const SHORT_MAX_SECONDS = 3 * 60;
 
 // `videos.list` costs 1 quota unit total regardless of how many ids are
 // passed (up to 50) - cheap enough to call on every poll for the handful of
-// new videos a channel's feed returns.
-async function fetchVideoDurations(videoIds: string[]): Promise<Map<string, number>> {
+// new videos a channel's feed returns. Exported so the one-off duration
+// backfill (app/api/backfill/durations) can reuse it.
+export async function fetchVideoDurations(videoIds: string[]): Promise<Map<string, number>> {
   const durations = new Map<string, number>();
   if (videoIds.length === 0) return durations;
 
@@ -140,5 +141,6 @@ export async function fetchChannelVideos(
       link: `https://www.youtube.com/watch?v=${entry["yt:videoId"]}`,
       description: entry["media:group"]?.["media:description"] ?? null,
       publishedAt: new Date(entry.published as string),
+      durationSeconds: durations.get(entry["yt:videoId"] as string) ?? null,
     }));
 }

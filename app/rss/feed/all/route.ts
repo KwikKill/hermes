@@ -27,6 +27,7 @@ function toPayload(item: ItemWithSources, now: Date) {
     source,
     image,
     seen: item.seen,
+    vote: item.vote,
     isFuture: item.publishedAt > now,
     publishedAtDisplay: item.publishedAt.toLocaleString("fr-FR", {
       day: "2-digit",

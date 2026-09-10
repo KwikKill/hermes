@@ -11,6 +11,7 @@ type FeedItemPayload = {
   source: string | null;
   image: string | null;
   seen: boolean;
+  vote: number;
   isFuture: boolean;
   publishedAtDisplay: string;
 };
@@ -152,6 +153,37 @@ export default function HermesWidgetPage() {
     setNextItem(await loadNext());
   };
 
+  const setVote = async (id: string, vote: number) => {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            upcoming: current.upcoming.map((item) =>
+              item.id === id ? { ...item, vote } : item
+            ),
+            recent: current.recent.map((item) =>
+              item.id === id ? { ...item, vote } : item
+            ),
+          }
+        : current
+    );
+
+    const res = await fetch(`/rss/feed/${id}/vote`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vote }),
+    });
+
+    if (!res.ok) {
+      // We didn't keep the previous vote around - just re-pull the page.
+      setData(await load(page));
+      return;
+    }
+
+    // A vote reweights the source, so the recommendation can change too.
+    setNextItem(await loadNext());
+  };
+
   if (data === null) {
     return (
       <main className="flex h-screen items-center justify-center bg-card text-sm text-muted">
@@ -174,7 +206,7 @@ export default function HermesWidgetPage() {
       </div>
 
       {page === 1 && nextItem !== undefined && (
-        <NextUpCard item={nextItem} onToggleSeen={toggleSeen} />
+        <NextUpCard item={nextItem} onToggleSeen={toggleSeen} onVote={setVote} />
       )}
 
       {upcoming.length > 0 && (
@@ -184,7 +216,12 @@ export default function HermesWidgetPage() {
           </summary>
           <div className="flex flex-col gap-2 border-t border-card-border p-2">
             {upcoming.map((item) => (
-              <FeedCard key={item.id} item={item} onToggleSeen={toggleSeen} />
+              <FeedCard
+                key={item.id}
+                item={item}
+                onToggleSeen={toggleSeen}
+                onVote={setVote}
+              />
             ))}
           </div>
         </details>
@@ -198,7 +235,12 @@ export default function HermesWidgetPage() {
 
       <div ref={recentListRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {recent.map((item) => (
-          <FeedCard key={item.id} item={item} onToggleSeen={toggleSeen} />
+          <FeedCard
+            key={item.id}
+            item={item}
+            onToggleSeen={toggleSeen}
+            onVote={setVote}
+          />
         ))}
       </div>
 
@@ -229,12 +271,45 @@ export default function HermesWidgetPage() {
   );
 }
 
+function VoteButtons({
+  vote,
+  onVote,
+}: {
+  vote: number;
+  onVote: (vote: number) => void;
+}) {
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-0.5 text-xs leading-none">
+      <button
+        type="button"
+        onClick={() => onVote(vote === 1 ? 0 : 1)}
+        className={`transition-opacity ${vote === 1 ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        title="J'aime — booste la source"
+        aria-label="J'aime"
+      >
+        👍
+      </button>
+      <button
+        type="button"
+        onClick={() => onVote(vote === -1 ? 0 : -1)}
+        className={`transition-opacity ${vote === -1 ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        title="Pas intéressé — masque l'item et pénalise la source"
+        aria-label="Pas intéressé"
+      >
+        👎
+      </button>
+    </div>
+  );
+}
+
 function NextUpCard({
   item,
   onToggleSeen,
+  onVote,
 }: {
   item: FeedItemPayload | null;
   onToggleSeen: (id: string, seen: boolean) => void;
+  onVote: (id: string, vote: number) => void;
 }) {
   return (
     <div className="shrink-0 rounded-lg border-2 border-teal-500/50 bg-card-item p-2">
@@ -282,13 +357,16 @@ function NextUpCard({
             </a>
           </div>
 
-          <input
-            type="checkbox"
-            checked={false}
-            onChange={(e) => onToggleSeen(item.id, e.target.checked)}
-            className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
-            aria-label="Marquer comme vu"
-          />
+          <div className="flex shrink-0 items-start gap-1.5">
+            <VoteButtons vote={item.vote} onVote={(v) => onVote(item.id, v)} />
+            <input
+              type="checkbox"
+              checked={false}
+              onChange={(e) => onToggleSeen(item.id, e.target.checked)}
+              className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
+              aria-label="Marquer comme vu"
+            />
+          </div>
         </div>
       )}
     </div>
@@ -298,14 +376,16 @@ function NextUpCard({
 function FeedCard({
   item,
   onToggleSeen,
+  onVote,
 }: {
   item: FeedItemPayload;
   onToggleSeen: (id: string, seen: boolean) => void;
+  onVote: (id: string, vote: number) => void;
 }) {
   return (
     <div
       className="flex items-start gap-2 rounded-lg border border-card-border bg-card-item p-2 transition-opacity"
-      style={{ opacity: item.seen ? 0.5 : 1 }}
+      style={{ opacity: item.seen || item.vote === -1 ? 0.5 : 1 }}
     >
       {item.image ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -341,13 +421,16 @@ function FeedCard({
         <p className="text-[11px] text-muted">{item.publishedAtDisplay}</p>
       </div>
 
-      <input
-        type="checkbox"
-        checked={item.seen}
-        onChange={(e) => onToggleSeen(item.id, e.target.checked)}
-        className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
-        aria-label={item.seen ? "Marquer comme non vu" : "Marquer comme vu"}
-      />
+      <div className="flex shrink-0 items-start gap-1.5">
+        <VoteButtons vote={item.vote} onVote={(v) => onVote(item.id, v)} />
+        <input
+          type="checkbox"
+          checked={item.seen}
+          onChange={(e) => onToggleSeen(item.id, e.target.checked)}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
+          aria-label={item.seen ? "Marquer comme non vu" : "Marquer comme vu"}
+        />
+      </div>
     </div>
   );
 }

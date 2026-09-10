@@ -19,12 +19,21 @@ enum FeedCategory {
 // them live and have it take effect for the digest, the widget's "next
 // media" card, and the tuning preview itself, all at once.
 model RecommendationSettings {
-  id           String   @id @default("singleton")
-  halfLifeDays Float    @default(75)
-  priorAlpha   Float    @default(2)
-  priorBeta    Float    @default(2)
-  maxAgeDays   Int      @default(7)
-  updatedAt    DateTime @updatedAt
+  id                   String   @id @default("singleton")
+  halfLifeDays         Float    @default(75)
+  priorAlpha           Float    @default(2)
+  priorBeta            Float    @default(2)
+  maxAgeDays           Int      @default(7)
+  // How much a 👍 / 👎 on one item counts, as a multiple of a normal
+  // watched / ignored item, when scoring its whole source.
+  upvoteWeight         Float    @default(2)
+  downvoteWeight       Float    @default(2)
+  // Pseudo-observations pulling a (source, duration-bucket) score back
+  // toward the source's overall score when that bucket has little data.
+  durationBackoffCount Float    @default(3)
+  // Cap on how many items from the same source a single digest may contain.
+  digestMaxPerSource   Int      @default(3)
+  updatedAt            DateTime @updatedAt
 }
 
 model TrackedChannel {
@@ -74,6 +83,15 @@ model FeedItem {
   // every night once it's been surfaced, regardless of whether it gets
   // marked seen afterwards.
   notifiedAt  DateTime?
+  // -1 = "pas interesse" (also drops the item from every recommendation),
+  // 0 = no vote, +1 = liked. Both non-zero values feed the source's score
+  // with an amplified weight - see lib/recommend.ts.
+  vote        Int          @default(0)
+  votedAt     DateTime?
+  // YouTube runtime in seconds (null for anime/games, and for YouTube rows
+  // predating the field until backfilled). Feeds the per-channel duration
+  // preference in the recommender.
+  durationSeconds Int?
 
   trackedChannelId String?
   trackedChannel   TrackedChannel? @relation(fields: [trackedChannelId], references: [id], onDelete: Cascade)

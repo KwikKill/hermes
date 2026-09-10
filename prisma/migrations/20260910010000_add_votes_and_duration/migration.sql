@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE "FeedItem" ADD COLUMN     "vote" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "votedAt" TIMESTAMP(3),
+ADD COLUMN     "durationSeconds" INTEGER;
+
+-- AlterTable
+ALTER TABLE "RecommendationSettings" ADD COLUMN     "upvoteWeight" DOUBLE PRECISION NOT NULL DEFAULT 2,
+ADD COLUMN     "downvoteWeight" DOUBLE PRECISION NOT NULL DEFAULT 2,
+ADD COLUMN     "durationBackoffCount" DOUBLE PRECISION NOT NULL DEFAULT 3,
+ADD COLUMN     "digestMaxPerSource" INTEGER NOT NULL DEFAULT 3;

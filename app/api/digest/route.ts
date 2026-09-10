@@ -55,7 +55,11 @@ export async function POST(request: NextRequest) {
   }
 
   const maxItems = Number(process.env.HERMES_DIGEST_MAX_ITEMS) || DEFAULT_MAX_ITEMS;
-  const items = await rankCandidates({ limit: maxItems, excludeNotified: true });
+  const items = await rankCandidates({
+    limit: maxItems,
+    excludeNotified: true,
+    diversify: true,
+  });
 
   if (items.length === 0) {
     return NextResponse.json({ sent: 0, reason: "no-candidates" });

@@ -11,6 +11,7 @@ function toPayload(item: RankedItem) {
     source: sourceLabel(item),
     image: sourceImage(item),
     seen: false,
+    vote: item.vote,
     isFuture: false,
     publishedAtDisplay: "",
   };

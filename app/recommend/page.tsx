@@ -8,6 +8,10 @@ type RecoParams = {
   priorAlpha: number;
   priorBeta: number;
   maxAgeDays: number;
+  upvoteWeight: number;
+  downvoteWeight: number;
+  durationBackoffCount: number;
+  digestMaxPerSource: number;
 };
 
 type PreviewItem = {
@@ -64,6 +68,38 @@ const FIELDS: {
     hint: "Âge maximum d'un item recommandable. Sert aussi de seuil « a eu sa chance » : un item plus vieux non vu devient un signal négatif ferme.",
     min: 1,
     max: 30,
+    step: 1,
+  },
+  {
+    key: "upvoteWeight",
+    label: "Poids d'un 👍",
+    hint: "Un 👍 sur un item compte comme ce nombre d'items « vus » pour le score de toute sa source.",
+    min: 1,
+    max: 10,
+    step: 0.5,
+  },
+  {
+    key: "downvoteWeight",
+    label: "Poids d'un 👎",
+    hint: "Idem côté négatif. Un 👎 masque aussi l'item de toutes les recommandations, quel que soit ce poids.",
+    min: 1,
+    max: 10,
+    step: 0.5,
+  },
+  {
+    key: "durationBackoffCount",
+    label: "Repli durée (pseudo-obs)",
+    hint: "Force du repli du score par tranche de durée vers le score global de la chaîne quand la tranche a peu de données. 0 = pas de repli.",
+    min: 0,
+    max: 20,
+    step: 1,
+  },
+  {
+    key: "digestMaxPerSource",
+    label: "Max items / source (digest)",
+    hint: "Plafond du nombre d'items d'une même source dans un digest Discord. Sans effet sur le widget ni sur cet aperçu.",
+    min: 1,
+    max: 8,
     step: 1,
   },
 ];
