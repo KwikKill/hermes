@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
       link: item.link,
       source: sourceLabel(item),
       image: sourceImage(item),
+      vote: item.vote,
       score,
     })),
   });

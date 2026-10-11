@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import ItemActions, { type ItemActionHandlers } from "@/components/ItemActions";
 
 type RecoParams = {
   halfLifeDays: number;
@@ -21,6 +22,7 @@ type PreviewItem = {
   link: string;
   source: string;
   image: string | null;
+  vote: number;
   score: number;
 };
 
@@ -160,17 +162,41 @@ export default function RecommendTuningPage() {
     };
   }, [draft, previewKey]);
 
-  // Marks a previewed item seen / ignored (same /rss/feed endpoints as the
-  // widget), drops it from the list right away, then re-runs the preview so
-  // the next candidate moves up.
-  const markItem = async (id: string, action: "seen" | "ignore") => {
-    setItems((current) => current?.filter((item) => item.id !== id) ?? current);
-    await fetch(`/rss/feed/${id}/${action}`, {
+  // Same controls / /rss/feed endpoints as the widget. Every candidate here
+  // is unseen and not ignored, so checking "vu", ignoring or 👎 always drops
+  // it from the ranking - remove it right away; a 👍 just updates in place.
+  // Either way, re-run the preview afterwards since any of these reweights
+  // the item's source.
+  const sendPatch = async (id: string, endpoint: string, body: object) => {
+    await fetch(`/rss/feed/${id}/${endpoint}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(action === "seen" ? { seen: true } : { ignored: true }),
+      body: JSON.stringify(body),
     });
     setPreviewKey((k) => k + 1);
+  };
+
+  const removeItem = (id: string) =>
+    setItems((current) => current?.filter((item) => item.id !== id) ?? current);
+
+  const actions: ItemActionHandlers = {
+    onToggleSeen: (id, seen) => {
+      if (seen) removeItem(id);
+      sendPatch(id, "seen", { seen });
+    },
+    onToggleIgnored: (id, ignored) => {
+      if (ignored) removeItem(id);
+      sendPatch(id, "ignore", { ignored });
+    },
+    onVote: (id, vote) => {
+      if (vote === -1) removeItem(id);
+      else
+        setItems(
+          (current) =>
+            current?.map((item) => (item.id === id ? { ...item, vote } : item)) ?? current
+        );
+      sendPatch(id, "vote", { vote });
+    },
   };
 
   const setField = useCallback((key: keyof RecoParams, value: number) => {
@@ -352,22 +378,10 @@ export default function RecommendTuningPage() {
                       {item.score.toFixed(3)}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => markItem(item.id, "seen")}
-                    title="Marquer comme vu"
-                    className="rounded-md border border-card-border px-2 py-1 text-xs hover:bg-teal-600 hover:text-white"
-                  >
-                    Vu
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => markItem(item.id, "ignore")}
-                    title="Ignorer — passer sans regarder (sort des recommandations)"
-                    className="rounded-md border border-card-border px-2 py-1 text-xs hover:bg-card-border"
-                  >
-                    Ignorer
-                  </button>
+                  <ItemActions
+                    item={{ ...item, seen: false, ignored: false }}
+                    actions={actions}
+                  />
                 </div>
               </li>
             ))}
