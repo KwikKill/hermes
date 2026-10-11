@@ -143,17 +143,19 @@ function emptyAgg(): Agg {
   return { wSeen: 0, wTotal: 0 };
 }
 
-// Scores unseen, recent (last maxAgeDays days) items by how much the user
-// has historically engaged with that item's source.
+// Scores unseen, non-ignored, recent (last maxAgeDays days) items by how
+// much the user has historically engaged with that item's source.
 //
 // Base per-source score is a recency-weighted Beta estimate over "settled"
-// history items - settled = seen, voted, or older than maxAgeDays. Each
-// item's weight is 0.5^(ageDays / halfLifeDays), multiplied by upvote/
+// history items - settled = seen, ignored, voted, or older than maxAgeDays.
+// Each item's weight is 0.5^(ageDays / halfLifeDays), multiplied by upvote/
 // downvote weight when it carries a vote:
 //
 //     score(source) = (Σ w·[positive] + α) / (Σ w + α + β)
 //
-// where positive = upvoted, or (seen and not downvoted).
+// where positive = upvoted, or (seen and not downvoted). An ignored item is
+// a plain weight-1 negative - the same signal an unseen item gives once it
+// ages past maxAgeDays, just settled immediately.
 //
 // For YouTube items that have a stored duration, the score is refined by a
 // per-(source, duration-bucket) estimate that backs off to the source's
@@ -191,6 +193,7 @@ export async function rankCandidatesScored(options: {
     where: { publishedAt: { lte: now } },
     select: {
       seen: true,
+      ignored: true,
       vote: true,
       durationSeconds: true,
       publishedAt: true,
@@ -205,7 +208,8 @@ export async function rankCandidatesScored(options: {
     const key = sourceKey(item);
     if (!key) continue;
     const ageDays = (nowMs - item.publishedAt.getTime()) / DAY_MS;
-    const settled = item.seen || item.vote !== 0 || ageDays > maxAgeDays;
+    const settled =
+      item.seen || item.ignored || item.vote !== 0 || ageDays > maxAgeDays;
     if (!settled) continue;
 
     const mult =
@@ -261,6 +265,7 @@ export async function rankCandidatesScored(options: {
   const candidates: RankedItem[] = await prisma.feedItem.findMany({
     where: {
       seen: false,
+      ignored: false,
       vote: { not: -1 },
       publishedAt: { lte: now, gte: oldestAllowed },
       ...(options.excludeNotified ? { notifiedAt: null } : {}),

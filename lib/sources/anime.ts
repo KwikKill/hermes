@@ -126,12 +126,28 @@ async function fetchAiringSchedulePage(
   return { media: data.Media, lastPage: data.Media.airingSchedule.pageInfo.lastPage };
 }
 
-export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]> {
+// `allPages` walks the whole schedule instead of only its last page - used
+// by the manual source refresh (lib/refresh.ts) to correct every stored
+// episode, e.g. when AniList first listed a whole season on its premiere
+// date and only filled in the real per-episode dates later.
+export async function fetchAnimeEpisodes(
+  anilistId: number,
+  options: { allPages?: boolean } = {}
+): Promise<FeedEntry[]> {
   const first = await fetchAiringSchedulePage(anilistId, 1);
-  const { media } =
-    first.lastPage > 1
-      ? await fetchAiringSchedulePage(anilistId, first.lastPage)
-      : first;
+  let { media } = first;
+  let nodes = media.airingSchedule?.nodes ?? [];
+
+  if (options.allPages) {
+    for (let page = 2; page <= first.lastPage; page++) {
+      const next = await fetchAiringSchedulePage(anilistId, page);
+      nodes = nodes.concat(next.media.airingSchedule?.nodes ?? []);
+    }
+  } else if (first.lastPage > 1) {
+    ({ media } = await fetchAiringSchedulePage(anilistId, first.lastPage));
+    nodes = media.airingSchedule?.nodes ?? [];
+  }
+
   const showTitle = media.title.english ?? media.title.romaji;
 
   const streamingByEpisode = new Map<number, StreamingEpisode>();
@@ -140,7 +156,7 @@ export async function fetchAnimeEpisodes(anilistId: number): Promise<FeedEntry[]
     if (num !== null && ep.url) streamingByEpisode.set(num, ep);
   }
 
-  return (media.airingSchedule?.nodes ?? []).map((node) => {
+  return nodes.map((node) => {
     const streaming = streamingByEpisode.get(node.episode);
     return {
       guid: `anime:${anilistId}:${node.episode}`,

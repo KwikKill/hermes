@@ -11,6 +11,7 @@ type FeedItemPayload = {
   source: string | null;
   image: string | null;
   seen: boolean;
+  ignored: boolean;
   vote: number;
   isFuture: boolean;
   publishedAtDisplay: string;
@@ -107,81 +108,59 @@ export default function HermesWidgetPage() {
     };
   }, [load, page]);
 
-  const toggleSeen = async (id: string, seen: boolean) => {
+  // Optimistic local update of one item, wherever it sits (upcoming/recent).
+  const patchItem = (id: string, patch: Partial<FeedItemPayload>) => {
     setData((current) =>
       current
         ? {
             ...current,
             upcoming: current.upcoming.map((item) =>
-              item.id === id ? { ...item, seen } : item
+              item.id === id ? { ...item, ...patch } : item
             ),
             recent: current.recent.map((item) =>
-              item.id === id ? { ...item, seen } : item
+              item.id === id ? { ...item, ...patch } : item
             ),
           }
         : current
     );
-
-    const res = await fetch(`/rss/feed/${id}/seen`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seen }),
-    });
-
-    if (!res.ok) {
-      // Revert on failure - the optimistic update above was wrong.
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              upcoming: current.upcoming.map((item) =>
-                item.id === id ? { ...item, seen: !seen } : item
-              ),
-              recent: current.recent.map((item) =>
-                item.id === id ? { ...item, seen: !seen } : item
-              ),
-            }
-          : current
-      );
-      return;
-    }
-
-    // Any seen/unseen change can move the ranking - re-pull the current
-    // best recommendation (this is how "mark as read -> next suggestion
-    // appears" actually happens, there's no local next-in-line to fall
-    // back to since ranking depends on live seen-ratios).
-    setNextItem(await loadNext());
   };
 
-  const setVote = async (id: string, vote: number) => {
-    setData((current) =>
-      current
-        ? {
-            ...current,
-            upcoming: current.upcoming.map((item) =>
-              item.id === id ? { ...item, vote } : item
-            ),
-            recent: current.recent.map((item) =>
-              item.id === id ? { ...item, vote } : item
-            ),
-          }
-        : current
-    );
-
-    const res = await fetch(`/rss/feed/${id}/vote`, {
+  // PATCHes one FeedItem field after an optimistic update. On failure, just
+  // re-pull the page rather than trying to reconstruct the previous state.
+  // On success, any seen/ignored/vote change can move the ranking - re-pull
+  // the current best recommendation (this is how "mark as read -> next
+  // suggestion appears" actually happens, there's no local next-in-line to
+  // fall back to since ranking depends on live seen-ratios).
+  const sendPatch = async (id: string, endpoint: string, body: object) => {
+    const res = await fetch(`/rss/feed/${id}/${endpoint}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vote }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
-      // We didn't keep the previous vote around - just re-pull the page.
       setData(await load(page));
       return;
     }
 
-    // A vote reweights the source, so the recommendation can change too.
     setNextItem(await loadNext());
+  };
+
+  // seen and ignored are mutually exclusive - setting one clears the other
+  // (the API does the same server-side).
+  const toggleSeen = async (id: string, seen: boolean) => {
+    patchItem(id, seen ? { seen, ignored: false } : { seen });
+    await sendPatch(id, "seen", { seen });
+  };
+
+  const toggleIgnored = async (id: string, ignored: boolean) => {
+    patchItem(id, ignored ? { ignored, seen: false } : { ignored });
+    await sendPatch(id, "ignore", { ignored });
+  };
+
+  const setVote = async (id: string, vote: number) => {
+    patchItem(id, { vote });
+    await sendPatch(id, "vote", { vote });
   };
 
   if (data === null) {
@@ -195,6 +174,11 @@ export default function HermesWidgetPage() {
   const { upcoming, recent, recentTotal } = data;
   const pageCount = Math.max(1, Math.ceil(recentTotal / PAGE_SIZE));
   const totalItems = recentTotal + upcoming.length;
+  const actions: ItemActionHandlers = {
+    onToggleSeen: toggleSeen,
+    onToggleIgnored: toggleIgnored,
+    onVote: setVote,
+  };
 
   return (
     <main className="flex h-screen flex-col gap-3 bg-card p-3">
@@ -206,7 +190,7 @@ export default function HermesWidgetPage() {
       </div>
 
       {page === 1 && nextItem !== undefined && (
-        <NextUpCard item={nextItem} onToggleSeen={toggleSeen} onVote={setVote} />
+        <NextUpCard item={nextItem} actions={actions} />
       )}
 
       {upcoming.length > 0 && (
@@ -216,12 +200,7 @@ export default function HermesWidgetPage() {
           </summary>
           <div className="flex flex-col gap-2 border-t border-card-border p-2">
             {upcoming.map((item) => (
-              <FeedCard
-                key={item.id}
-                item={item}
-                onToggleSeen={toggleSeen}
-                onVote={setVote}
-              />
+              <FeedCard key={item.id} item={item} actions={actions} />
             ))}
           </div>
         </details>
@@ -235,12 +214,7 @@ export default function HermesWidgetPage() {
 
       <div ref={recentListRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {recent.map((item) => (
-          <FeedCard
-            key={item.id}
-            item={item}
-            onToggleSeen={toggleSeen}
-            onVote={setVote}
-          />
+          <FeedCard key={item.id} item={item} actions={actions} />
         ))}
       </div>
 
@@ -270,6 +244,12 @@ export default function HermesWidgetPage() {
     </main>
   );
 }
+
+type ItemActionHandlers = {
+  onToggleSeen: (id: string, seen: boolean) => void;
+  onToggleIgnored: (id: string, ignored: boolean) => void;
+  onVote: (id: string, vote: number) => void;
+};
 
 function VoteButtons({
   vote,
@@ -302,14 +282,49 @@ function VoteButtons({
   );
 }
 
+// Vote + ignore + seen controls, shared by the "next media" card and the
+// list rows.
+function ItemActions({
+  item,
+  actions,
+}: {
+  item: FeedItemPayload;
+  actions: ItemActionHandlers;
+}) {
+  return (
+    <div className="flex shrink-0 items-start gap-1.5">
+      <VoteButtons vote={item.vote} onVote={(v) => actions.onVote(item.id, v)} />
+      <button
+        type="button"
+        onClick={() => actions.onToggleIgnored(item.id, !item.ignored)}
+        className={`mt-0.5 text-sm leading-none transition-opacity ${item.ignored ? "opacity-100" : "opacity-30 hover:opacity-70"}`}
+        title={
+          item.ignored
+            ? "Ne plus ignorer"
+            : "Ignorer — passer sans regarder (sort des recommandations)"
+        }
+        aria-label={item.ignored ? "Ne plus ignorer" : "Ignorer"}
+        aria-pressed={item.ignored}
+      >
+        ⏭
+      </button>
+      <input
+        type="checkbox"
+        checked={item.seen}
+        onChange={(e) => actions.onToggleSeen(item.id, e.target.checked)}
+        className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
+        aria-label={item.seen ? "Marquer comme non vu" : "Marquer comme vu"}
+      />
+    </div>
+  );
+}
+
 function NextUpCard({
   item,
-  onToggleSeen,
-  onVote,
+  actions,
 }: {
   item: FeedItemPayload | null;
-  onToggleSeen: (id: string, seen: boolean) => void;
-  onVote: (id: string, vote: number) => void;
+  actions: ItemActionHandlers;
 }) {
   return (
     <div className="shrink-0 rounded-lg border-2 border-teal-500/50 bg-card-item p-2">
@@ -351,22 +366,13 @@ function NextUpCard({
               href={item.link}
               target="_blank"
               rel="noreferrer"
-              className="block text-sm font-semibold leading-snug hover:underline"
+              className="block break-words text-sm font-semibold leading-snug hover:underline"
             >
               {item.title}
             </a>
           </div>
 
-          <div className="flex shrink-0 items-start gap-1.5">
-            <VoteButtons vote={item.vote} onVote={(v) => onVote(item.id, v)} />
-            <input
-              type="checkbox"
-              checked={false}
-              onChange={(e) => onToggleSeen(item.id, e.target.checked)}
-              className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
-              aria-label="Marquer comme vu"
-            />
-          </div>
+          <ItemActions item={item} actions={actions} />
         </div>
       )}
     </div>
@@ -375,17 +381,15 @@ function NextUpCard({
 
 function FeedCard({
   item,
-  onToggleSeen,
-  onVote,
+  actions,
 }: {
   item: FeedItemPayload;
-  onToggleSeen: (id: string, seen: boolean) => void;
-  onVote: (id: string, vote: number) => void;
+  actions: ItemActionHandlers;
 }) {
   return (
     <div
       className="flex items-start gap-2 rounded-lg border border-card-border bg-card-item p-2 transition-opacity"
-      style={{ opacity: item.seen || item.vote === -1 ? 0.5 : 1 }}
+      style={{ opacity: item.seen || item.ignored || item.vote === -1 ? 0.5 : 1 }}
     >
       {item.image ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -406,31 +410,27 @@ function FeedCard({
           {item.source && (
             <span className="truncate text-[11px] text-muted">{item.source}</span>
           )}
+          {item.ignored && (
+            <span className="shrink-0 rounded bg-card-border px-1.5 py-0.5 text-[10px] text-muted">
+              ignoré
+            </span>
+          )}
         </div>
         <a
           href={item.link}
           target="_blank"
           rel="noreferrer"
-          className={`block text-sm font-semibold leading-snug hover:underline ${item.seen ? "line-through" : ""}`}
+          className={`block break-words text-sm font-semibold leading-snug hover:underline ${item.seen ? "line-through" : ""}`}
         >
           {item.title}
         </a>
         {item.description && (
-          <p className="line-clamp-2 text-xs text-muted">{item.description}</p>
+          <p className="line-clamp-2 break-words text-xs text-muted">{item.description}</p>
         )}
         <p className="text-[11px] text-muted">{item.publishedAtDisplay}</p>
       </div>
 
-      <div className="flex shrink-0 items-start gap-1.5">
-        <VoteButtons vote={item.vote} onVote={(v) => onVote(item.id, v)} />
-        <input
-          type="checkbox"
-          checked={item.seen}
-          onChange={(e) => onToggleSeen(item.id, e.target.checked)}
-          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-teal-500"
-          aria-label={item.seen ? "Marquer comme non vu" : "Marquer comme vu"}
-        />
-      </div>
+      <ItemActions item={item} actions={actions} />
     </div>
   );
 }

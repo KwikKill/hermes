@@ -78,6 +78,11 @@ model FeedItem {
   publishedAt DateTime
   createdAt   DateTime     @default(now())
   seen        Boolean      @default(false)
+  // "Skipped without watching" - drops the item from every recommendation
+  // and counts as a settled, normal-weight negative for its source (the
+  // same signal an unseen item gives once it ages out of maxAgeDays, just
+  // immediately). Mutually exclusive with `seen`.
+  ignored     Boolean      @default(false)
   // Set when this item is included in a nightly Discord digest (see
   // POST /api/digest) - keeps a digest from re-suggesting the same item
   // every night once it's been surfaced, regardless of whether it gets

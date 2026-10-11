@@ -97,6 +97,7 @@ export default function TrackerSection({
   const [tracked, setTracked] = useState<TrackedItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshStatus, setRefreshStatus] = useState<Record<string, string>>({});
 
   const fetchTracked = useCallback(async () => {
     const res = await fetch(`/api/tracked/${category}`);
@@ -171,10 +172,29 @@ export default function TrackerSection({
     setTracked(await fetchTracked());
   }
 
+  // Refetches one source and re-syncs its stored items (new ones added,
+  // changed dates/titles corrected) - see lib/refresh.ts. The outcome is
+  // shown next to the button until the next refresh of that item.
+  async function refreshItem(id: string) {
+    setRefreshStatus((s) => ({ ...s, [id]: "..." }));
+    let status: string;
+    try {
+      const res = await fetch(`/api/tracked/${category}/${id}/refresh`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erreur");
+      status = `${data.created} ajouté(s), ${data.updated} mis à jour`;
+    } catch (err) {
+      status = err instanceof Error ? err.message : "Erreur";
+    }
+    setRefreshStatus((s) => ({ ...s, [id]: status }));
+  }
+
   const trackedExternalIds = new Set(tracked.map((t) => String(t.externalId)));
 
   return (
-    <section className="rounded-lg border border-neutral-800 p-4">
+    <section className="min-w-0 rounded-lg border border-neutral-800 p-4">
       <h2 className="mb-3 text-lg font-semibold">{title}</h2>
 
       <input
@@ -243,11 +263,25 @@ export default function TrackerSection({
               )}
               <span className="min-w-0 break-words">{t.label}</span>
             </div>
-            <div className="mt-1.5 flex justify-end">
+            <div className="mt-1.5 flex items-center justify-end gap-2">
+              {refreshStatus[t.id] && (
+                <span className="min-w-0 truncate text-xs text-neutral-500">
+                  {refreshStatus[t.id]}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => refreshItem(t.id)}
+                disabled={refreshStatus[t.id] === "..."}
+                title="Re-télécharger les éléments de cette source et corriger les dates / titres modifiés"
+                className="shrink-0 rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-blue-600 disabled:opacity-40"
+              >
+                Rafraîchir
+              </button>
               <button
                 type="button"
                 onClick={() => removeItem(t.id)}
-                className="rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-red-600"
+                className="shrink-0 rounded bg-neutral-700 px-2 py-1 text-xs hover:bg-red-600"
               >
                 Retirer
               </button>

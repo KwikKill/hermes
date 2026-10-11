@@ -20,10 +20,11 @@ export async function PATCH(
     );
   }
 
+  // Marking seen clears `ignored` - the two are mutually exclusive.
   const item = await prisma.feedItem.update({
     where: { id },
-    data: { seen: body.seen },
+    data: body.seen ? { seen: true, ignored: false } : { seen: false },
   });
 
-  return NextResponse.json({ id: item.id, seen: item.seen });
+  return NextResponse.json({ id: item.id, seen: item.seen, ignored: item.ignored });
 }

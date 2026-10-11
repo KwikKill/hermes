@@ -115,6 +115,8 @@ export default function RecommendTuningPage() {
   const [items, setItems] = useState<PreviewItem[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [savingState, setSavingState] = useState<"idle" | "saving">("idle");
+  // Bumped after marking an item seen/ignored, to re-run the preview.
+  const [previewKey, setPreviewKey] = useState(0);
 
   // Load current + default params on mount.
   useEffect(() => {
@@ -133,7 +135,8 @@ export default function RecommendTuningPage() {
     };
   }, []);
 
-  // Re-run the preview 350ms after the draft settles.
+  // Re-run the preview 350ms after the draft settles (or after an item was
+  // marked seen/ignored).
   useEffect(() => {
     if (!draft) return;
     let ignore = false;
@@ -155,7 +158,20 @@ export default function RecommendTuningPage() {
       ignore = true;
       clearTimeout(timeout);
     };
-  }, [draft]);
+  }, [draft, previewKey]);
+
+  // Marks a previewed item seen / ignored (same /rss/feed endpoints as the
+  // widget), drops it from the list right away, then re-runs the preview so
+  // the next candidate moves up.
+  const markItem = async (id: string, action: "seen" | "ignore") => {
+    setItems((current) => current?.filter((item) => item.id !== id) ?? current);
+    await fetch(`/rss/feed/${id}/${action}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(action === "seen" ? { seen: true } : { ignored: true }),
+    });
+    setPreviewKey((k) => k + 1);
+  };
 
   const setField = useCallback((key: keyof RecoParams, value: number) => {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
@@ -177,7 +193,9 @@ export default function RecommendTuningPage() {
 
   if (!draft || !saved || !defaults) {
     return (
-      <main className="mx-auto max-w-5xl p-6 text-sm text-muted">Chargement...</main>
+      <main className="mx-auto w-full max-w-5xl p-4 text-sm text-muted sm:p-6">
+        Chargement...
+      </main>
     );
   }
 
@@ -185,8 +203,11 @@ export default function RecommendTuningPage() {
   const isDefault = paramsEqual(draft, defaults);
 
   return (
-    <main className="mx-auto max-w-5xl p-6">
-      <header className="mb-6 flex items-baseline justify-between gap-4">
+    // w-full: <body> is a flex column, and `mx-auto` on a flex item disables
+    // the cross-axis stretch - without it <main> sizes to its content
+    // (the nowrap titles below) instead of the viewport.
+    <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
+      <header className="mb-6">
         <div>
           <h1 className="text-2xl font-bold">Réglage des recommandations</h1>
           <p className="text-sm text-muted">
@@ -199,12 +220,14 @@ export default function RecommendTuningPage() {
         </div>
       </header>
 
-      <div className="grid gap-6 md:grid-cols-[320px_1fr]">
+      {/* minmax(0, ...) tracks: a plain `1fr` / implicit `auto` column grows
+          to the min-content width of the truncated titles and overflows. */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[320px_minmax(0,1fr)]">
         <section className="flex flex-col gap-5 rounded-lg border border-card-border bg-card p-4">
           {FIELDS.map((field) => (
             <div key={field.key} className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">
-                <label htmlFor={field.key} className="text-sm font-medium">
+                <label htmlFor={field.key} className="min-w-0 text-sm font-medium">
                   {field.label}
                 </label>
                 <input
@@ -215,7 +238,7 @@ export default function RecommendTuningPage() {
                   step={field.step}
                   value={draft[field.key]}
                   onChange={(e) => setField(field.key, Number(e.target.value))}
-                  className="w-20 rounded border border-card-border bg-card-item px-1.5 py-0.5 text-right text-sm"
+                  className="w-20 shrink-0 rounded border border-card-border bg-card-item px-1.5 py-0.5 text-right text-sm"
                 />
               </div>
               <input
@@ -258,7 +281,7 @@ export default function RecommendTuningPage() {
           )}
         </section>
 
-        <section className="flex flex-col gap-2">
+        <section className="@container flex min-w-0 flex-col gap-2">
           <div className="flex items-center justify-between text-xs text-muted">
             <span>20 premières recommandations</span>
             {previewing && <span>calcul...</span>}
@@ -270,55 +293,81 @@ export default function RecommendTuningPage() {
           )}
           <ol className="flex flex-col gap-1.5">
             {items?.map((item, index) => (
+              // Container query (not viewport): the list column's width
+              // depends on the grid above, so the row stacks its score +
+              // actions under the title whenever the column itself is narrow.
               <li
                 key={item.id}
-                className="flex items-center gap-3 rounded-lg border border-card-border bg-card-item p-2"
+                className="flex flex-col gap-2 rounded-lg border border-card-border bg-card-item p-2 @lg:flex-row @lg:items-center @lg:gap-3"
               >
-                <span className="w-5 shrink-0 text-right text-sm font-semibold text-muted tabular-nums">
-                  {index + 1}
-                </span>
-                {item.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.image}
-                    alt=""
-                    className="h-9 w-9 shrink-0 rounded-md object-cover"
-                  />
-                ) : (
-                  <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xs font-bold ${CATEGORY_STYLES[item.category]}`}
-                  >
-                    {item.category.slice(0, 1)}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[item.category]}`}
-                    >
-                      {item.category}
-                    </span>
-                    <span className="truncate text-[11px] text-muted">{item.source}</span>
-                  </div>
-                  <a
-                    href={item.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block truncate text-sm font-medium hover:underline"
-                  >
-                    {item.title}
-                  </a>
-                </div>
-                <div className="flex w-24 shrink-0 items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-card-border">
-                    <div
-                      className="h-full rounded-full bg-teal-500"
-                      style={{ width: `${Math.round(item.score * 100)}%` }}
-                    />
-                  </div>
-                  <span className="w-10 text-right text-xs tabular-nums text-muted">
-                    {item.score.toFixed(3)}
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="w-5 shrink-0 text-right text-sm font-semibold text-muted tabular-nums">
+                    {index + 1}
                   </span>
+                  {item.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="h-9 w-9 shrink-0 rounded-md object-cover"
+                    />
+                  ) : (
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xs font-bold ${CATEGORY_STYLES[item.category]}`}
+                    >
+                      {item.category.slice(0, 1)}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[item.category]}`}
+                      >
+                        {item.category}
+                      </span>
+                      <span className="min-w-0 truncate text-[11px] text-muted">
+                        {item.source}
+                      </span>
+                    </div>
+                    <a
+                      href={item.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={item.title}
+                      className="block truncate text-sm font-medium hover:underline"
+                    >
+                      {item.title}
+                    </a>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center justify-end gap-2">
+                  <div className="flex w-24 items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-card-border">
+                      <div
+                        className="h-full rounded-full bg-teal-500"
+                        style={{ width: `${Math.round(item.score * 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right text-xs tabular-nums text-muted">
+                      {item.score.toFixed(3)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => markItem(item.id, "seen")}
+                    title="Marquer comme vu"
+                    className="rounded-md border border-card-border px-2 py-1 text-xs hover:bg-teal-600 hover:text-white"
+                  >
+                    Vu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markItem(item.id, "ignore")}
+                    title="Ignorer — passer sans regarder (sort des recommandations)"
+                    className="rounded-md border border-card-border px-2 py-1 text-xs hover:bg-card-border"
+                  >
+                    Ignorer
+                  </button>
                 </div>
               </li>
             ))}
